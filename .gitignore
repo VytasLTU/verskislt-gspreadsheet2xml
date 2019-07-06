@@ -1,0 +1,6 @@
+/.env
+/vendor/
+/.idea/
+/data/
+/credentials.json
+/token.json
