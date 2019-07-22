@@ -2,6 +2,7 @@
 
 namespace SVDVerskisLT;
 
+use Error;
 use Exception;
 use Google_Client;
 use Google_Exception;
@@ -18,7 +19,7 @@ class GSpreadsheet
     {
         $client = new Google_Client();
 
-        $client->setApplicationName('Verskis.LT XML generator');
+        $client->setApplicationName(getenv('APP_NAME'));
         $client->setScopes(Google_Service_Sheets::SPREADSHEETS_READONLY);
         $client->setAuthConfig('credentials.json');
         $client->setAccessType('offline');
@@ -38,7 +39,7 @@ class GSpreadsheet
             } else {
                 // Request authorization from the user.
                 $authUrl = $client->createAuthUrl();
-                printf("Open the following link in your browser:\n%s\n", $authUrl);
+                printf('Open the following link in your browser:' . PHP_EOL . '%s' . PHP_EOL, $authUrl);
                 print 'Enter verification code: ';
                 $authCode = trim(fgets(STDIN));
 
@@ -61,6 +62,17 @@ class GSpreadsheet
         return $client;
     }
 
+    private function getColNameFromNumber($num) {
+        $numeric = $num % 26;
+        $letter = chr(65 + $numeric);
+        $num2 = intval($num / 26);
+        if ($num2 > 0) {
+            return $this->getColNameFromNumber($num2 - 1) . $letter;
+        } else {
+            return $letter;
+        }
+    }
+
     /**
      * @param $outputfile
      * @throws Google_Exception
@@ -70,13 +82,97 @@ class GSpreadsheet
         $client = $this->getClient();
         $service = new Google_Service_Sheets($client);
 
-        $spreadsheetId = '11fGBIq2eGJy5tRtq1OOBSrgrA6crLMAiIriWxzVaXIg';
+        $spreadsheetId = getenv('SPREADSHEET_ID');
+        $sheetName = getenv('SHEETNAME');
 
-        $result = $service->spreadsheets_values->get($spreadsheetId,'Sheet1');
+        echo 'Spreadsheet ID: ', $spreadsheetId, PHP_EOL, 'Sheet: ', $sheetName, PHP_EOL;
+
+        $result = $service->spreadsheets_values->get($spreadsheetId, $sheetName);
+        $rows = $result->getValues();
+
+        $totalRows = count($rows);
+        echo 'Total rows: ', $totalRows - 1, PHP_EOL;
+
+        if ($totalRows > 0) {
+            $totalCols = count($rows[0]);
+
+            $attrCols = [];
+            $attrNamesUniq = [];
+
+            for ($colIdx = 0; $colIdx < $totalCols; $colIdx++) {
+                $headerCell = $rows[0][$colIdx];
+
+                if (!strncasecmp('attr:', $headerCell, 5)) {
+                    $rawAttrNames = explode('¦', substr($headerCell, 5));
+
+                    foreach ($rawAttrNames as $rawAttrName) {
+                        $matches = [];
+                        if (preg_match('/^([^\[]+)\[([A-Za-z]{2,2})\]$/', trim($rawAttrName), $matches)) {
+                            $attrName = trim($matches[1]);
+
+                            $colNameUpper = mb_strtoupper($attrName);
+                            $locale = strtoupper($matches[2]);
+                            if( !array_key_exists($locale, $attrNamesUniq) ) {
+                                $attrNamesUniq[$locale] = [];
+                            }
+
+                            if( in_array($colNameUpper, $attrNamesUniq[$locale]) ) {
+                                throw new Error("Duplicate attribute name '{$rawAttrName}' on column {$this->getColNameFromNumber($colIdx)}");
+                            }
+                            $attrNamesUniq[$locale][] = $colNameUpper;
+
+                            if( !array_key_exists($colIdx, $attrCols) )  {
+                                $attrCols[$colIdx] = [];
+                            }
+
+                            if( !array_key_exists($locale, $attrCols[$colIdx]) ) {
+                                $attrCols[$colIdx][$locale] = $attrName;
+                            }
+                        } else {
+                            throw new Error("Invalid attribute name '{$rawAttrName}' on column {$this->getColNameFromNumber($colIdx)}");
+                        }
+                    }
+                } else {
 
 
-        var_dump($result->getValues());
 
-        echo $outputfile, PHP_EOL;
+
+
+                }
+
+
+//                echo $colIdx, '  -  ', $headerCell, PHP_EOL;
+
+            }
+
+            var_dump($attrCols);
+        } else {
+            throw new Error("No header row!");
+        }
+
+
+        $colMap = [
+            'import' => null,
+            'code' => null,
+            'CategoryPath' => [],
+            'Name' => [],
+            'Tax' => null,
+            'PrimeCost' => [],
+            'Price' => [],
+            'Quantity' => null,
+            'Barcode' => null,
+            'Description' => [],
+            'ShortDescription' => [],
+            'OldPrice' => [],
+            'Weight' => [],
+            'AttributeSet' => [],
+            'Image' => [],
+            'Publish' => []
+        ];
+
+
+//        var_dump($result->getValues());
+
+//        echo $outputfile, PHP_EOL;
     }
 }
